@@ -36,9 +36,33 @@ export class UserService {
 
     // Save the new user
     await user.save();
-
+    console.log(user.id);
     return user;
   }
+
+  async addAddress(
+    addressData: any,
+    isDefault: boolean,
+    id: string,
+  ): Promise<Address> {
+    // Create a new address
+    const address = new this.addressModel(addressData);
+    await address.save();
+
+    // find user and add address
+    const user = await this.model.findById('6407426733a54413b3069deb');
+    user.addresses.push(address);
+
+    if (isDefault) {
+      user.defaultAddress = address;
+      await user.save();
+    }
+    // Save the new user
+    await user.save();
+
+    return address;
+  }
+
   findAll() {
     return this.model.find();
   }

@@ -26,6 +26,14 @@ export class UserController {
     );
   }
 
+  @Post('/:id/newAddress')
+  async addAddressToUser(
+    @Param('id') userId: string,
+    @Body() data: any,
+  ): Promise<Address> {
+    return this.userService.addAddress(data.address, data.isDefault, userId);
+  }
+
   @Get()
   findAll() {
     return this.userService.findAll();
