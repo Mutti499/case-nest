@@ -10,7 +10,6 @@ export class AddressService {
   create(address: Address) {
     return this.model.create(address);
   }
-
   findAll() {
     return this.model.find();
   }

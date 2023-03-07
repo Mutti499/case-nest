@@ -9,6 +9,9 @@ import {
 } from '@nestjs/common';
 import { UserService } from './user.service';
 import { Address } from '../address/address.schema';
+import { Subscription } from '../subscription/subscription.schema';
+import { Order } from '../order/order.schema';
+
 import { User } from './user.schema';
 
 @Controller('user')
@@ -32,6 +35,14 @@ export class UserController {
     @Body() data: any,
   ): Promise<Address> {
     return this.userService.addAddress(data.address, data.isDefault, userId);
+  }
+
+  @Post(':id/newOrder')
+  async createOrder(
+    @Param('id') userId: string,
+    @Body() chart: any,
+  ): Promise<User> {
+    return this.userService.createOrder(userId, chart);
   }
 
   @Get()
