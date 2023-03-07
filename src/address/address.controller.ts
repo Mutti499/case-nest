@@ -25,7 +25,7 @@ export class AddressController {
   findOne(@Param('id') id: string) {
     return this.addressService.findOne(id);
   }
-  @Patch('/:id') 
+  @Patch('/:id')
   update(@Param('id') id: string, @Body() data: Address) {
     return this.addressService.update(id, data);
   }

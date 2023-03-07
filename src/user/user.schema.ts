@@ -15,13 +15,13 @@ export class User {
   @Prop({ required: true })
   password: string;
 
-  @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'Address' })
-  addresses: [Address];
+  @Prop({ type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Address' }] })
+  addresses: Address[];
 
   @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'Address' })
   defaultAddress: Address;
 
-  @Prop({ required: true })
+  @Prop()
   stripeCustomerId: string;
 }
 

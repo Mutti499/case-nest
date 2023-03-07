@@ -10,6 +10,5 @@ import { Address, AddressSchema } from './address.schema';
   ],
   controllers: [AddressController],
   providers: [AddressService],
-  // exports: [Address],
 })
 export class AddressModule {}
