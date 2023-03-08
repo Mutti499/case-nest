@@ -9,6 +9,12 @@ import {
 } from '../subscription/subscription.schema';
 import { Order, OrderDocument } from '../order/order.schema';
 import { Product, ProductDocument } from '../product/product.schema';
+import * as cron from 'node-cron';
+
+import Stripe from 'stripe';
+const stripe = new Stripe(process.env.STRIPE_API_KEY, {
+  apiVersion: '2022-11-15',
+});
 
 @Injectable()
 export class UserService {
@@ -47,7 +53,22 @@ export class UserService {
 
     // Save the new user
     await user.save();
-    console.log(user.id);
+
+    const customer = await stripe.customers.create({
+      email: user.email,
+      name: user.name,
+      address: {
+        line1: address.line1,
+        line2: address.line2,
+        city: address.city,
+        state: address.state,
+        postal_code: address.postal_code,
+        country: address.country,
+      },
+    });
+    user.stripeCustomerId = customer.id;
+    await user.save();
+
     return user;
   }
 
@@ -70,6 +91,23 @@ export class UserService {
     }
     // Save the new user
     await user.save();
+
+    // Add the new address to the user's Stripe account COMMENTED BECAUSE OF UNNECESSARINESS
+    // const stripeCustomer = await stripe.customers.retrieve(
+    //   user.stripeCustomerId,
+    // );
+    // const stripeAddress = await stripe.customers.createSource(
+    //   stripeCustomer.id,
+    //   {
+    //     object: 'card',
+    //     address_line1: address.line1,
+    //     address_line2: address.line2,
+    //     address_city: address.city,
+    //     address_state: address.state,
+    //     address_zip: address.postal_code,
+    //     address_country: address.country,
+    //   },
+    // );
 
     return address;
   }
@@ -105,11 +143,28 @@ export class UserService {
           });
 
           order.receiptUrl = `https://website.com/receipts/${order._id}.pdf`;
-          //   order.products.push(product);
           await order.save();
           user.orders.push(order);
-          await user.save();
 
+          //If this is a onetime payment this payment will be created onetime instant
+          const paymentIntent = await stripe.paymentIntents.create({
+            amount: order.amount * 100, // amount in cents
+            currency: 'usd',
+            customer: user.stripeCustomerId,
+            payment_method_types: ['card'],
+            description: `Charge for ${order.productName}`,
+            metadata: {
+              order_id: order.id,
+            },
+          });
+
+          // send the client secret to the client
+          // return {
+          //     clientSecret: paymentIntent.client_secret,
+          //     orderId: order._id,
+          //   };
+
+          await user.save();
         } else if (paymentType === 'Subscription') {
           const { price } = product;
           const options = item.option;
@@ -147,6 +202,27 @@ export class UserService {
                 'Invalid subscription plan: must be oneMonth, threeMonth, or oneYear',
               );
           }
+          // Create a new price object in Stripe
+          const stripePrice = await stripe.prices.create({
+            unit_amount: newPrice * 100, // price in cents
+            currency: 'usd',
+          });
+
+          // Create a subscription object on Stripe
+          //If this is not a onetime payment this payment will be created for charge customer monthly
+          const stripeSubscription = await stripe.subscriptions.create({
+            customer: user.stripeCustomerId,
+            items: [
+              {
+                price: stripePrice.id,
+                price_data: {
+                  currency: 'usd',
+                  product: product.id,
+                  recurring: { interval: 'month' }, // Replace with your desired interval
+                },
+              },
+            ],
+          });
 
           const subscription = new this.subscriptionModel({
             options,
@@ -155,6 +231,7 @@ export class UserService {
             startDate,
             endDate,
             user: user._id,
+            stripeSubscriptionId: stripeSubscription.id,
             product,
           });
 
@@ -178,9 +255,91 @@ export class UserService {
         }
       },
     );
-    console.log(user);
 
     return user;
+  }
+
+  async scheduleMonthlyOrders(): Promise<void> {
+    cron.schedule('0 0 * * *', async () => {
+      // code runs everymidnight at international time zone
+      const currentDate = new Date();
+
+      // Find subscriptions that have ended
+      const endedSubscriptions = await this.subscriptionModel.find({
+        endDate: { $lt: currentDate },
+        isActive: true,
+      });
+
+      // Remove ended subscriptions from user's subscriptions
+      for (const subscription of endedSubscriptions) {
+        const user = await this.userModel.findById(subscription.user);
+        await this.userModel.findByIdAndUpdate(user._id, {
+          $pull: { subscriptions: subscription._id },
+        });
+        await user.save();
+        await stripe.subscriptions.del(subscription.stripeSubscriptionId);
+      }
+
+      // Find active subscriptions
+      const activeSubscriptions = await this.subscriptionModel.find({
+        endDate: { $gte: currentDate },
+        isActive: true,
+      });
+
+      for (const subscription of activeSubscriptions) {
+        const user = await this.userModel.findById(subscription.user);
+        const lastOrder = await this.orderModel.findOne({
+          user: user._id,
+          paymentType: 'Subscription',
+          subscription: subscription._id,
+          createdAt: {
+            $gte: new Date(
+              currentDate.getFullYear(),
+              currentDate.getMonth(),
+              1,
+            ),
+            $lte: new Date(
+              currentDate.getFullYear(),
+              currentDate.getMonth() + 1,
+              0,
+            ),
+          },
+        });
+        if (!lastOrder) {
+          await this.createMonthlyOrder(user, subscription);
+        }
+      }
+    });
+  }
+
+  async createMonthlyOrder(
+    user: UserDocument,
+    subscription: SubscriptionDocument,
+  ): Promise<OrderDocument> {
+    const stripeSubscription = await stripe.subscriptions.retrieve(
+      subscription.stripeSubscriptionId,
+    );
+    const stripeInvoice = await stripe.invoices.create({
+      customer: user.stripeCustomerId,
+      subscription: stripeSubscription.id,
+    });
+
+    const order = new this.orderModel({
+      amount: subscription.amount,
+      user: user,
+      price: subscription.price,
+      address: user.defaultAddress,
+      paymentType: 'Subscription',
+      subscription: subscription,
+      products: [subscription.product],
+      receiptUrl: stripeInvoice.invoice_pdf || ' ',
+    });
+    if (order.receiptUrl === ' ') {
+      order.receiptUrl = `https://website.com/receipts/${order._id}.pdf`;
+    }
+    await order.save();
+
+    return order;
   }
 
   findAll() {

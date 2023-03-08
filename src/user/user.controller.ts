@@ -28,6 +28,25 @@ export class UserController {
       data.user.stripeCustomerId,
     );
   }
+  /* Body for createUser
+{
+    "user": {
+        "name": "John Doe",
+        "email": "johndoe@example.com",
+        "password": "aaaa"
+
+    },
+    "address": {
+        "line1": "123 Main St",
+        "line2": "asd",
+        "city": "Anytown",
+        "state": "CA",
+        "postal_code": "12345",
+        "country": "USA"
+    }
+}
+
+*/
 
   @Post('/:id/newAddress')
   async addAddressToUser(
@@ -37,6 +56,20 @@ export class UserController {
     return this.userService.addAddress(data.address, data.isDefault, userId);
   }
 
+  /* Body for newAddress
+{   
+    "address": {
+        "line1": "2567 Near St",
+        "line2": "24/6",
+        "city": "Istanbul",
+        "state": "California",
+        "postal_code": "34002",
+        "country": "Turkey"
+    },
+    "isDefault": true
+}
+*/
+
   @Post(':id/newOrder')
   async createOrder(
     @Param('id') userId: string,
@@ -44,6 +77,26 @@ export class UserController {
   ): Promise<User> {
     return this.userService.createOrder(userId, chart);
   }
+
+  /* Body for newOrder
+{   
+    "chart" : [
+        {
+            "productID": "6407adaa2d284915bb677f0d", //These ID's coming prom product objects which are generated manually. 
+            "amount" : 20,
+            "paymentType": "oneTime",
+            "option": "noSub"
+        },
+        {
+            "productID": "6407adff2d284915bb677f0f",
+            "amount" : 50,
+            "paymentType": "Subscription",
+            "option": "oneYear"
+        }
+    ]
+
+}
+*/
 
   @Get()
   findAll() {
