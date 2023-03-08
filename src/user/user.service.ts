@@ -30,6 +30,7 @@ export class UserService {
     private readonly productModel: Model<ProductDocument>,
   ) {}
 
+  // This function creates a new user in the database and registers them in Stripe
   async createUser(
     name: string,
     email: string,
@@ -41,7 +42,7 @@ export class UserService {
     const address = new this.addressModel(addressData);
     await address.save();
 
-    // Create a new user with the provided address, subscription, and order
+    // Create a new user with the provided address
     const user = new this.userModel({
       name,
       email,
@@ -54,6 +55,7 @@ export class UserService {
     // Save the new user
     await user.save();
 
+    // Registering the user in stripe platform
     const customer = await stripe.customers.create({
       email: user.email,
       name: user.name,
@@ -66,6 +68,8 @@ export class UserService {
         country: address.country,
       },
     });
+
+    // update the  user
     user.stripeCustomerId = customer.id;
     await user.save();
 
@@ -85,6 +89,7 @@ export class UserService {
     const user = await this.model.findById(id);
     user.addresses.push(address);
 
+    //If user wants it make address the default address
     if (isDefault) {
       user.defaultAddress = address;
       await user.save();
@@ -112,6 +117,13 @@ export class UserService {
     return address;
   }
 
+  /**
+   * Creates an order for the specified user based on the provided data.
+   * @param {string} userId - The id of the user for whom the order will be created.
+   * @param {object} data - An object containing the necessary data for creating the order.
+   * @returns {Promise<User>} - A Promise that resolves with the updated user object.
+   * @throws {Error} - If the user or product is not found, or if an invalid subscription plan is specified.
+   */
   async createOrder(userId: string, data: any): Promise<User> {
     const user = await this.userModel.findById(userId);
     if (!user) {
@@ -133,6 +145,8 @@ export class UserService {
         const paymentType = item.paymentType;
 
         if (paymentType === 'oneTime') {
+          // Create a one-time payment order
+
           const order = new this.orderModel({
             productName: product.name,
             amount: item.amount,
@@ -147,6 +161,8 @@ export class UserService {
           user.orders.push(order);
 
           //If this is a onetime payment this payment will be created onetime instant
+          // Create a payment intent for the one-time payment
+
           const paymentIntent = await stripe.paymentIntents.create({
             amount: order.amount * 100, // amount in cents
             currency: 'usd',
@@ -166,6 +182,7 @@ export class UserService {
 
           await user.save();
         } else if (paymentType === 'Subscription') {
+          // Create a subscription-based payment order
           const { price } = product;
           const options = item.option;
 
@@ -224,6 +241,7 @@ export class UserService {
             ],
           });
 
+          //Create subscription with the given information
           const subscription = new this.subscriptionModel({
             options,
             amount: item.amount,
@@ -234,9 +252,9 @@ export class UserService {
             stripeSubscriptionId: stripeSubscription.id,
             product,
           });
-
           await subscription.save();
 
+          //Create first order for the subscription
           const order = new this.orderModel({
             productName: product.name,
             amount: item.amount,
@@ -249,6 +267,8 @@ export class UserService {
 
           order.receiptUrl = `https://website.com/receipts/${order._id}.pdf`;
           await order.save();
+
+          //Add ids of new subscription and order to User
           user.subscriptions.push(subscription);
           user.orders.push(order);
           await user.save();
@@ -286,8 +306,10 @@ export class UserService {
         isActive: true,
       });
 
+      // Iterate over active subscriptions and check if a monthly order needs to be created
       for (const subscription of activeSubscriptions) {
         const user = await this.userModel.findById(subscription.user);
+        // Find the last order made by the user for this subscription within the current month
         const lastOrder = await this.orderModel.findOne({
           user: user._id,
           paymentType: 'Subscription',
@@ -305,6 +327,8 @@ export class UserService {
             ),
           },
         });
+
+        // If no order was found for this subscription and month, create a new monthly order
         if (!lastOrder) {
           await this.createMonthlyOrder(user, subscription);
         }
@@ -312,18 +336,27 @@ export class UserService {
     });
   }
 
+  /**
+   * Creates a monthly order for a user's subscription
+   * @param {UserDocument} user - The user associated with the order
+   * @param {SubscriptionDocument} subscription - The subscription associated with the order
+   * @returns {Promise<OrderDocument>} - The created order
+   */
   async createMonthlyOrder(
     user: UserDocument,
     subscription: SubscriptionDocument,
   ): Promise<OrderDocument> {
+    // Retrieve the Stripe subscription object associated with the subscription
     const stripeSubscription = await stripe.subscriptions.retrieve(
       subscription.stripeSubscriptionId,
     );
+    // Create a new invoice using the Stripe API
     const stripeInvoice = await stripe.invoices.create({
       customer: user.stripeCustomerId,
       subscription: stripeSubscription.id,
     });
 
+    // Create a new monthly order object using the Order model
     const order = new this.orderModel({
       amount: subscription.amount,
       user: user,
@@ -334,11 +367,16 @@ export class UserService {
       products: [subscription.product],
       receiptUrl: stripeInvoice.invoice_pdf || ' ',
     });
+
+    // If the receipt URL is empty, set it to a default URL using the order ID
     if (order.receiptUrl === ' ') {
       order.receiptUrl = `https://website.com/receipts/${order._id}.pdf`;
     }
+
+    // Save the order to the database
     await order.save();
 
+    // Return the created order object
     return order;
   }
 

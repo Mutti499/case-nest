@@ -9,8 +9,6 @@ import {
 } from '@nestjs/common';
 import { UserService } from './user.service';
 import { Address } from '../address/address.schema';
-import { Subscription } from '../subscription/subscription.schema';
-import { Order } from '../order/order.schema';
 
 import { User } from './user.schema';
 
@@ -18,6 +16,7 @@ import { User } from './user.schema';
 export class UserController {
   constructor(private readonly userService: UserService) {}
 
+  //Resgistering user to service
   @Post()
   async createUser(@Body() data: any): Promise<User> {
     return this.userService.createUser(
@@ -48,6 +47,7 @@ export class UserController {
 
 */
 
+  //Adding address to user
   @Post('/:id/newAddress')
   async addAddressToUser(
     @Param('id') userId: string,
@@ -70,6 +70,7 @@ export class UserController {
 }
 */
 
+  //Making a new order (Subscription process and making order according to it)
   @Post(':id/newOrder')
   async createOrder(
     @Param('id') userId: string,
