@@ -6,3 +6,5 @@ To make monthly orders cron has been used. Every day, customers' subscriptions a
 When the subscription expires, the person's subscription is deleted.
 
 You can find necessary documents in user.controller.ts and user.service.ts
+
+In this process I used Nest.js, MongoDB, TypeScript and Stripe 
